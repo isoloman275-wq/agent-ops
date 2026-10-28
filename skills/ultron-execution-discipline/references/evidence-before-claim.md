@@ -38,7 +38,7 @@ You MUST:
 3. **Stand down completely** until they explicitly say go
 
 > Re-launching after a veto is the single worst offense in this lab.
-> the operator has corrected this repeatedly: "launched M1 train after explicit
+> the operator has corrected this repeatedly: "launched MAIN-NODE train after explicit
 > 'no', then again — multiple times, each caught"
 
 > NOTE: If the user says a process/layer is "dead weight" or "unused",

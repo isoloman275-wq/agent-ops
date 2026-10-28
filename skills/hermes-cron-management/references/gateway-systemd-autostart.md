@@ -2,7 +2,7 @@
 
 Goal: keep the Hermes gateway (and its embedded cron scheduler) alive across
 logins so crons don't silently skip when the desktop sleeps/reboots. Chosen
-over the M2 option when the user prioritizes local latency/responsiveness.
+over the GPU-NODE option when the user prioritizes local latency/responsiveness.
 
 Environment: WSL2 Ubuntu, systemd --user running, Hermes installed via pipx
 (`hermes` on PATH → venv at `/path/to/projects`).
@@ -77,7 +77,7 @@ StandardError=journal
 [Install]
 WantedBy=default.target
 ```
-CRITICAL: the `PATH` includes `/mnt/c/WINDOWS/...` and `HERMES_HOME` is set.
+CRITICAL: the `PATH` includes `<windows-path>` and `HERMES_HOME` is set.
 Without these, crons that call `powershell.exe` / `cmd.exe` (the video pipeline,
 YouTube cross-post) fail even though the gateway is "up".
 
@@ -94,4 +94,4 @@ systemd retries after RestartSec=5 and comes up clean. Wait ~6s before judging.
 ## Caveat
 Auto-start on WSL login still does nothing if Windows is fully shut down / asleep
 — WSL isn't running, so cron can't fire until you log in. For true 24/7 immunity
-use the M2 (gpu-node-2) gateway option instead.
+use the GPU-NODE (gpu-node) gateway option instead.

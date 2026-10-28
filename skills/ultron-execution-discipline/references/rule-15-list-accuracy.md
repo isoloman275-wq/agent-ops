@@ -14,4 +14,4 @@ and "get it right I literally just said it."
 - Getting the list right is a trust issue, not a detail issue.
 - When doing a lab audit, scan BOTH Windows and Linux filesystems — NextClaw was
   on the Windows Desktop but the agent only scanned WSL and declared "not installed."
-  Always check /mnt/c/ for Windows-side tools.
+  Always check <windows-drive>/ for Windows-side tools.

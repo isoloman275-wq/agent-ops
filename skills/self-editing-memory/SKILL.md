@@ -50,7 +50,7 @@ Writes are atomic (tmp+rename) with a `.bak` kept each write.
 
 - NEVER use the `memory` tool and this script on the same file in the same
   turn without re-reading `stats` between — IDs shift after every write.
-- Never delete a HUX correction / hard rule / M2-safety block without its
+- Never delete a operator correction / hard rule / GPU-NODE-safety block without its
   content being preserved in fact_store or a skill first.
 - One write per decision — re-run `find` before each replace/remove.
 

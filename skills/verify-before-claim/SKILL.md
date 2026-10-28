@@ -10,7 +10,7 @@ setup_skipped: false
 # Verify-Before-Claim (the operator's trust rule — now enforced at runtime)
 
 the operator has caught Hermes stating unverified "facts" repeatedly — asserting a
-process is dead, a file missing, M2 free, a balance — from partial probes or
+process is dead, a file missing, GPU-NODE free, a balance — from partial probes or
 stale memory. That is the #1 trust-destroyer. This skill makes the standard
 explicit, checkable, and **enforced by code**.
 
@@ -21,7 +21,7 @@ Before outputting ANY claim about:
 - a file/dir/checkpoint/model existing or not
 - GPU/VRAM/util on any node
 - a dollar amount/balance/payout/reward
-- whether M2/M1/M3 is free or has something resident
+- whether GPU-NODE/MAIN-NODE/AUX-NODE is free or has something resident
 
 you MUST have executed the verifying tool call **IN THE SAME TURN** and the
 claim must match what it returned. If you have NOT run the check, phrase it as
@@ -40,7 +40,7 @@ This skill ships a live enforcement module: `verify_guard.py`
 ### Usage from Python
 ```python
 from verify_guard import guard
-result = guard(response_text="M2 is free and qwen3.8 is not loaded")
+result = guard(response_text="GPU-NODE is free and qwen3.8 is not loaded")
 print(result.verdict)     # "PASS" | "FAIL" | "UNVERIFIED" | "CLEAN"
 print(result.probes)      # List[ProbeResult] with evidence
 print(result.blocked_text) # Response with failed claims redacted
@@ -52,9 +52,9 @@ print(result.blocked_text) # Response with failed claims redacted
 python3 verify_guard.py --probe-only
 
 # Check a specific response text
-python3 verify_guard.py --check-text "M2 is free, training is dead" --json
+python3 verify_guard.py --check-text "GPU-NODE is free, training is dead" --json
 
-# Self-test (connects to M2/M3, checks everything)
+# Self-test (connects to GPU-NODE/AUX-NODE, checks everything)
 python3 verify_guard.py --self-test
 ```
 
@@ -62,9 +62,9 @@ python3 verify_guard.py --self-test
 
 | Claim Pattern | Category | Probe Used | Severity |
 |---|---|---|---|
-| `M2 is free/busy/running` | process | SSH→ps + nvidia-smi + Ollama API | critical |
-| `M3 is free/busy/running` | process | curl M3:11434/api/ps | critical |
-| `qwen3.8 is loaded/not loaded` | ollama_model | curl :11434/api/ps (M2+M3) | high |
+| `GPU-NODE is free/busy/running` | process | SSH→ps + nvidia-smi + Ollama API | critical |
+| `AUX-NODE is free/busy/running` | process | curl AUX-NODE:11434/api/ps | critical |
+| `qwen3.8 is loaded/not loaded` | ollama_model | curl :11434/api/ps (GPU-NODE+AUX-NODE) | high |
 | `ComfyUI is up/down` | process | curl :8188/queue | high |
 | `training is dead/done/running` | training | SSH→ps aux | high |
 | `TikTok not posting` | process | wmic + content_history.json | high |
@@ -77,16 +77,16 @@ python3 verify_guard.py --self-test
 
 ```
 Verdict: FAIL
-Claims: ['M2 is free', 'qwen3.8 is not loaded', 'ComfyUI is running']
+Claims: ['GPU-NODE is free', 'qwen3.8 is not loaded', 'ComfyUI is running']
 
-  [✓ VERIFIED] M2 state → GPU active, Ollama: qwen3.8:27b-132k
-  [✗ FAILED]   qwen3.8 not loaded → actually loaded on M2
+  [✓ VERIFIED] GPU-NODE state → GPU active, Ollama: <thinking-model>
+  [✗ FAILED]   qwen3.8 not loaded → actually loaded on GPU-NODE
   [✗ FAILED]   ComfyUI running → unreachable on localhost:8188
 ```
 
 ## FORBIDDEN (these are lies, not mistakes)
 
-- "M2 is free" / "the run is dead" without `/api/ps` + `nvidia-smi` + `ps aux`
+- "GPU-NODE is free" / "the run is dead" without `/api/ps` + `nvidia-smi` + `ps aux`
   in the same turn. Run-state proof = ALL THREE.
 - "no venv exists" / "that file isn't there" from checking ONE path only.
   An empty probe = "not found at THIS place", NEVER "doesn't exist".
@@ -124,7 +124,6 @@ redact it and note what was actually found.
 ```
 
 ## References
-- `references/verified-claims.md` — Log of probe results per session (append after each significant lab action)
 - `references/qa_pairs.json` — FAQ covering negation logic, crash causes, and cross-machine probing
 - `ultron-execution-discipline` — Parent discipline (RULE 14 now links here)
 - `evidence-before-claim` — Original rule doc (now superseded by this engine)
@@ -139,7 +138,7 @@ redact it and note what was actually found.
 
 - **Approval-mode interference (user-felt as "needing permission for every step")**: root
   cause was `approvals.mode: manual` in config — EVERY flagged shell command prompted the user,
-  derailing flow mid-exploit. Fix applied live: `hermes config set approvals.mode smart`
+  derailing flow mid-operation. Fix applied live: `hermes config set approvals.mode smart`
   (auto-runs low-risk, prompts only on genuinely destructive). When a user says "stop asking me
   for permission", check THIS setting before assuming it's prompt-phrasing; verify with
   `hermes config get approvals.mode` and report before/after values in the same turn.

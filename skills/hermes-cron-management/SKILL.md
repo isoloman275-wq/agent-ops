@@ -1,13 +1,13 @@
 ---
 name: hermes-cron-management
-description: "Diagnose and repair Hermes cron jobs. Two failure classes - (1) model-ID errors / wrong provider/base_url (provider:null to OpenRouter 400 trap, repointing to M2 Ollama); (2) silent skips where a cron misses its slot with NO error because the gateway process was not running (boot-order / auto-start gap). Covers correct cronjob tool mechanics (base_url must be top-level, not nested in model), the silent-skip diagnostic procedure, and how to keep the gateway alive. Trigger when a cron shows last_status error, a 400 not a valid model ID message, provider:null with a local model name, a cron missed/did not run with no error, or when bulk-repointing crons to M2 Ollama."
+description: "Diagnose and repair Hermes cron jobs. Two failure classes - (1) model-ID errors / wrong provider/base_url (provider:null to OpenRouter 400 trap, repointing to GPU-NODE Ollama); (2) silent skips where a cron misses its slot with NO error because the gateway process was not running (boot-order / auto-start gap). Covers correct cronjob tool mechanics (base_url must be top-level, not nested in model), the silent-skip diagnostic procedure, and how to keep the gateway alive. Trigger when a cron shows last_status error, a 400 not a valid model ID message, provider:null with a local model name, a cron missed/did not run with no error, or when bulk-repointing crons to GPU-NODE Ollama."
 ---
 
 # Hermes Cron Management
 
 ## When to use
 - A cron reports `last_status: "error"` and the error mentions `not a valid model ID` / HTTP 400.
-- You need to repoint one or many crons at a local Ollama (M2) instead of the default OpenRouter provider.
+- You need to repoint one or many crons at a local Ollama (GPU-NODE) instead of the default OpenRouter provider.
 - Auditing crons for the `provider: null` trap (latent failures that haven't errored yet).
 - **A cron "missed" its slot with NO error** — `last_status` still `ok`, but `last_run_at` is stale and `next_run_at` jumped past the missed time. This is the silent-skip failure class (gateway wasn't alive). See "Silent-skip: gateway not running" below.
 - **An agent cron reports `last_status: error` with an HTTP 500 / `cudaMalloc failed: out of memory` / `unable to allocate CUDA< n> buffer`** — the LLM it loads cannot fit in the inference host's VRAM. Fix = convert it to a `no_agent` script job (it almost never needs an LLM). See "Agent cron OOM on the inference host" below.
@@ -15,7 +15,7 @@ description: "Diagnose and repair Hermes cron jobs. Two failure classes - (1) mo
 - **A backup/push cron errors with git auth failure** (`Invalid username or token`) — probe the CREDENTIAL first, not the cron config. See "Dead credential" below.
 
 ## Root cause — the "CRON GOTCHA"
-`config.yaml`'s default `model.provider: custom` resolves to OpenRouter (`base_url: openrouter.ai/api/v1`). When a cron is created with `provider: null`, it falls through to that default. If the cron's `model` is a LOCAL Ollama name (e.g. `qwen3.8:27b-132k`, `qwen3-coder:30b`), the scheduler ships that name to OpenRouter, which rejects it:
+`config.yaml`'s default `model.provider: custom` resolves to OpenRouter (`base_url: openrouter.ai/api/v1`). When a cron is created with `provider: null`, it falls through to that default. If the cron's `model` is a LOCAL Ollama name (e.g. `<thinking-model>`, `qwen3-coder:30b`), the scheduler ships that name to OpenRouter, which rejects it:
 
 `400 - {'error': {'message': '<name> is not a valid model ID', 'code': 400}}`
 
@@ -28,19 +28,19 @@ CORRECT — `base_url` at top level, alongside `model`:
 ```
 cronjob action=update
   job_id:   <id>
-  model:    {"model": "qwen3.8:27b-132k", "provider": "custom"}
-  base_url: "http://gpu-node-2:11434/v1"
+  model:    {"model": "<thinking-model>", "provider": "custom"}
+  base_url: "http://gpu-node:11434/v1"
 ```
 
 WRONG — `base_url` nested in `model` is silently dropped:
 ```
 cronjob action=update
   job_id: <id>
-  model: {"model": "qwen3.8:27b-132k", "provider": "custom",
-          "base_url": "http://gpu-node-2:11434/v1"}   # <-- dropped, fix fails
+  model: {"model": "<thinking-model>", "provider": "custom",
+          "base_url": "http://gpu-node:11434/v1"}   # <-- dropped, fix fails
 ```
 
-For local M2 Ollama the working values are `provider: "custom"` + `base_url: "http://gpu-node-2:11434/v1"`. A known-good reference job is **"TikTok Analytics Daily Report"** (`16e6d491efea`): `provider: custom` + `base_url: http://gpu-node-2:11434/v1` with `model: qwen3.8:27b-132k`, reporting `ok`. Replicate its exact shape.
+For local GPU-NODE Ollama the working values are `provider: "custom"` + `base_url: "http://gpu-node:11434/v1"`. A known-good reference job is **"TikTok Analytics Daily Report"** (`16e6d491efea`): `provider: custom` + `base_url: http://gpu-node:11434/v1` with `model: <thinking-model>`, reporting `ok`. Replicate its exact shape.
 
 ### GOTCHA — the cronjob tool + CLI CANNOT set base_url; patch jobs.json (verified 2026-08-13)
 Even with `base_url` passed as a top-level param, the `cronjob` tool `action=update` returns **`No updates provided.`** and drops it (it silently rejects `base_url` as not-an-update-field), and `hermes cron edit`'s CLI exposes `--model` and `--provider` but has **NO `--base-url` flag** in its help. So the tool-based path above (from the earlier 400-class note) does NOT work for setting `base_url` — don't keep retrying it (`repeated_exact_failure` loop). The reliable fallback:
@@ -54,7 +54,7 @@ Even with `base_url` passed as a top-level param, the `cronjob` tool `action=upd
    d=json.load(open(p))
    for j in d['jobs']:
        if j.get('id')=='<JOB_ID>':
-           j['base_url']='http://gpu-node-2:11434/v1'; j['model']='qwen3.8:27b-132k'; j['provider']='custom'
+           j['base_url']='http://gpu-node:11434/v1'; j['model']='<thinking-model>'; j['provider']='custom'
    json.dump(d, open(p,'w'), indent=2, ensure_ascii=False)
    ```
    The scheduler reloads `jobs.json` each tick; `cronjob action=list` reflects the change immediately. Keep the change small (one job's routing) and always back up first. Verified on TikTok Pipeline Watchdog (`f8b4bd1942d3`) + Weekly App-Trends Brief (`1c4dd6fc2a7e`).
@@ -78,7 +78,7 @@ A cron can miss its slot WITHOUT ever showing `error`. Symptoms: `last_status` i
 
 ### The real fix — keep the gateway alive (boot-order gap)
 A manually-launched `hermes gateway run` dies when the host sleeps/reboots, silently skipping every cron in that window. Options, in order of robustness:
-- **Best (24/7 fire immunity): run the gateway on the always-on M2 (gpu-node-2)** instead of the WSL desktop. It survives the user's Windows sleep/reboot cycle entirely. The M2 already hosts Ollama, so cron firing there is immune to desktop downtime.
+- **Best (24/7 fire immunity): run the gateway on the always-on GPU-NODE (gpu-node)** instead of the WSL desktop. It survives the user's Windows sleep/reboot cycle entirely. The GPU-NODE already hosts Ollama, so cron firing there is immune to desktop downtime.
 - **Auto-start on WSL login (faster/responsive, still dies on full reboot)**: systemd-user service. VERIFIED procedure below — this is the recommended local path when the user prioritizes latency over 24/7 immunity.
 - **External watchdog** (OS task scheduler, NOT Hermes cron): pings the gateway and restarts it if dead. But a dead gateway also kills the watchdog's own scheduler — so the watcher must live outside Hermes.
 
@@ -102,20 +102,20 @@ This is the concrete procedure — do NOT hand-roll a bare unit; let Hermes own 
    ```
    (Path: the venv python is `/path/to/projects`. Get it live with `which hermes` → resolve the symlink, or just use `hermes gateway run --replace` if on PATH.)
 3. `systemctl --user daemon-reload`
-4. Stop any manually-running gateway first so systemd owns the socket cleanly: `kill <manual_PID>` (the `--replace` flag also handles takeover, but killing avoids a brief double-bind).
+4. Stop any manually-running gateway first so systemd owns the socket cleanly: `kill <manual_PID>` (the `--replace` flag also handles re-binding the socket, but killing avoids a brief double-bind).
 5. `systemctl --user enable --now hermes-gateway.service` → starts now AND on every WSL login. `enabled` symlink appears under `default.target.wants/`.
 
 **GOTCHA — Hermes self-rewrites the unit (CRITICAL):**
 On first launch under systemd, Hermes detects `under_systemd=yes` and overwrites `hermes-gateway.service` with its own hardened version. That rewritten unit ADDS two env vars your jobs depend on:
 - `HERMES_HOME=~/.agent-home`
-- `Environment=PATH=...` that INCLUDES the Windows paths (`/mnt/c/WINDOWS/system32`, `.../WindowsPowerShell/v1.0/`, etc.)
+- `Environment=PATH=...` that INCLUDES the Windows paths (`<windows-system32>`, `.../WindowsPowerShell/v1.0/`, etc.)
 
 Without those, cron jobs that shell out to `powershell.exe` / `cmd.exe` (the video pipeline, YouTube cross-post) will FAIL even though the gateway is "up". So: NEVER ship a hand-written unit that omits these — either let Hermes rewrite it (recommended) or copy its rewritten form verbatim. After enabling, re-read the file to confirm Hermes rewrote it and the PATH/HERMES_HOME lines are present.
 
 NOTE — this Windows-PATH gap is NOT unique to the gateway. ANY systemd --user unit launched
 from WSL that shells out to `cmd.exe`/`powershell.exe` (e.g. the TTS playback watcher in the
 `voice-response` skill) hits the exact same silent failure unless its unit sets
-`Environment=PATH=.../mnt/c/WINDOWS/system32...`. If a WSL systemd service "runs" but its
+`Environment=PATH=...<windows-system32>...`. If a WSL systemd service "runs" but its
 Windows-side call does nothing, suspect the missing Windows PATH first.
 
 **GOTCHA — socket race on kill-test:**
@@ -137,7 +137,7 @@ See `references/windows-conhost-trace.md` for the parent-PID hunt that finds whi
 ## PITFALL — pausing crons does NOT stop Windows-side orchestrators
 `cronjob action=pause` (all jobs) silences the Hermes scheduler. It does NOT kill processes that were launched OUTSIDE Hermes — e.g. a Windows Scheduled Task (`schtasks`) or a manual launch that started `python /path/to/pipeline\orchestrator.py` or a custom listener (`jarvis_ear.py`). Those run their OWN schedulers (APScheduler) and keep spawning visible console windows (`conhost.exe`) on the desktop. Symptom the user reports: "I paused all crons but random CLI terminals still pop out of nowhere."
 
-REAL root cause in this lab (2026-07-18): the TikTok orchestrator (`/path/to/pipeline\orchestrator.py`) and a custom listener (`C:\Users\Admin\jarvis_ear.py`) were started via Windows startup/manual launch, NOT by Hermes cron. Pausing 14 Hermes crons did nothing to them. The fix was to kill those specific Windows PIDs directly via `powershell.exe Stop-Process`.
+REAL root cause in this lab (2026-07-18): the TikTok orchestrator (`/path/to/pipeline\orchestrator.py`) and a custom listener (`C:\Users\<you>\jarvis_ear.py`) were started via Windows startup/manual launch, NOT by Hermes cron. Pausing 14 Hermes crons did nothing to them. The fix was to kill those specific Windows PIDs directly via `powershell.exe Stop-Process`.
 
 ### Procedure when "terminals still pop up after pausing crons"
 1. List live Windows processes + their command lines from WSL:
@@ -199,14 +199,14 @@ guard refuses to fire to avoid surprise spend — even if the job is a tiny/`no_
 
 **Diagnose the affected set in one pass:** read `~/.agent-home/cron/jobs.json` (the source of
 truth) and list every job with `model: None` + `provider: None` (they inherited the default
-and are at drift risk), versus the few that pin a local model (`qwen3.8:27b-132k` +
-`provider: custom` + `base_url` M2 — safe). Only the unpinned set can trip this guard.
+and are at drift risk), versus the few that pin a local model (`<thinking-model>` +
+`provider: custom` + `base_url` GPU-NODE — safe). Only the unpinned set can trip this guard.
 
 **Fix — two options:**
 1. **Pin the job explicitly** (recommended when you know what it should use) —
    `cronjob action=update job_id=<id> provider=<provider> model=<model>` (provider/model
    top-level; `base_url` top-level too per the 400-class fix). For a local job:
-   `model=qwen3.8:27b-132k provider=custom base_url=http://gpu-node-2:11434/v1`.
+   `model=<thinking-model> provider=custom base_url=http://gpu-node:11434/v1`.
    For a cloud job, pin the model the job actually needs.
 2. **Pin the original values to keep prior behaviour** if you must not move the job's model.
 
@@ -224,16 +224,16 @@ default changed.
 **AUDIT THE WHOLE SET AT ONCE, don't fix one-by-one when asked (2026-08-14, the operator correction).**
 When a user asks you to fix a drift-skipped cron, do NOT pin just that one — run a single
 pass over `~/.agent-home/cron/jobs.json` and list EVERY job with `model: None` +
-`provider: None` + `not no_agent` (the full drift-risk set), then decide which to pin to M2
+`provider: None` + `not no_agent` (the full drift-risk set), then decide which to pin to GPU-NODE
 and which to convert to no_agent, and pin them all in one go. Leaving the rest of the
 unpinned set "healthy because they reported ok before" guarantees the NEXT config drift
 silently kills them the same way. As of 2026-08-14 the still-unpinned drift-risk set was:
-daily_pod (829498e12db2), hindsight-weekly-reflect, daily-devops-digest (75bb0bd51994),
-gumroad-seo-refresh (ed2d98753126), daily-link-check (4318372b0811), forge-daily-opt
+daily_pod (829498e12db2), hindsight-weekly-reflect, daily-devops-digest (<cron-id>),
+gumroad-seo-refresh (<cron-id>), daily-link-check (<cron-id>), forge-daily-opt
 (af6858b0b94a) — plus the TikTok guard crons are covered in `tiktok-pipeline-scheduling`.
 
 ## PITFALL — agent cron fails with HTTP 500 / `cudaMalloc failed: out of memory` (VRAM OOM on the inference host)
-A Hermes cron pointed at a LOCAL Ollama-hosted model (e.g. `qwen3.8:27b-132k` on M2)
+A Hermes cron pointed at a LOCAL Ollama-hosted model (e.g. `<thinking-model>` on GPU-NODE)
 reports `last_status: error` with a distinctive body that is NOT a 400 model-ID error:
 
 ```
@@ -244,12 +244,12 @@ error loading model: unable to allocate CUDA0 buffer
 ```
 
 **Root cause:** every run must LOAD the model into the inference host's VRAM to run the
-agent loop. When that host's GPUs are already near-saturated (this lab: M2 at ~90–94%
+agent loop. When that host's GPUs are already near-saturated (this lab: GPU-NODE at ~90–94%
 per GPU, only a few hundred MiB free), Ollama cannot allocate a CUDA buffer for the model,
 so the whole job aborts. This is distinct from both the provider/base_url 400 class and the
 silent-skip class — the script the cron runs is fine; the LLM loading is the blocker.
 
-**Why it's a self-feeding trap:** it's exactly when M2 is heavily loaded that you most want
+**Why it's a self-feeding trap:** it's exactly when GPU-NODE is heavily loaded that you most want
 the health/monitor cron to work, and it's exactly then that the job can't load its model.
 
 **Fix:** this class of job almost never needs an LLM — it just runs a deterministic shell
@@ -260,8 +260,8 @@ entirely, costs zero tokens, and makes the cron robust exactly when the host is 
 
 **Verify:** `cronjob action=list` shows `no_agent: true` + `script:`; a manual
 `cronjob action=run` produces a clean output file marked `Mode: no_agent (script)` with no
-OOM error. Worked example (2026-08-07, lab-health-check cron `e82e1e0387f2`): agent job 400/500'd
-for days because M2 VRAM was at 90–94%; converted to `no_agent` → instant clean health report.
+OOM error. Worked example (2026-08-07, lab-health-check cron `<cron-id>`): agent job 400/500'd
+for days because GPU-NODE VRAM was at 90–94%; converted to `no_agent` → instant clean health report.
 
 **Related lab finding (don't ignore):** when a non-cron workload needs to load a large model
 onto a saturated host, free a slot first (`ollama-model-vram-setup` / `check-m2-vram` skills).
@@ -413,14 +413,14 @@ is NOT silent, so a Telegram `deliver` turns it into spam.)
 - **`deliver:"origin"` is captured at CREATION TIME** — it delivers to the session that created the job. If that session is later closed, delivery is lost even though the cron keeps running. Fix: re-create (or `cronjob update deliver:"origin"` from) the live session to re-point it. With the gateway down, `deliver:"all"` (fans out to connected home channels like Telegram) also reaches nothing, so origin (the current session) is the only live target.
 - **`repeat` on `create` must be OMITTED for recurring jobs.** Passing `repeat:"forever"` (a string) fails with `"'<=' not supported between instances of 'str' and 'int'"`. Recurring schedules (`every 5m` / cron expr) default to `repeat:"forever"` when `repeat` is omitted. Only pass `repeat` as an INTEGER for one-shot/limited jobs — never the string `"forever"`.
 - **Silent-when-idle script jobs deliver nothing on idle ticks** — that's correct, not a bug. With `no_agent:true` + `script:"file.sh"`, the script's stdout is delivered verbatim to the `deliver` target; if the script prints nothing (by design, e.g. when no new input), nothing is delivered.
-- **`deliver` target MUST be the canonical name from `send_message action='list'` — NOT a raw chat ID.** Passing `telegram:8129060667` (the numeric chat id) is *accepted* by `cronjob create` but is NOT validated against real recipients — it can silently never deliver. Always run `send_message action='list'` FIRST and copy the exact target string it prints (e.g. `telegram:the operator (dm)`, `discord:#general-chat`). Keep `deliver` set to that verbatim string.
+- **`deliver` target MUST be the canonical name from `send_message action='list'` — NOT a raw chat ID.** Passing `telegram:<numeric-chat-id>` (the numeric chat id) is *accepted* by `cronjob create` but is NOT validated against real recipients — it can silently never deliver. Always run `send_message action='list'` FIRST and copy the exact target string it prints (e.g. `telegram:the operator (dm)`, `discord:#general-chat`). Keep `deliver` set to that verbatim string.
 - **VERIFY a delivery target before trusting the cron.** After creating the job, send a one-line test via `send_message target=<exact_target>`; success returns `message_id` + `mirrored: true`. If it fails, the cron will too — re-list, re-copy the target, then re-test. See `scripts/event_watchdog.py` for the full event-based watchdog pattern this enables (silent ticks, alert-only-on-event delivery).
 
 ## PITFALL — a HOST IP change silently breaks every cron (and profile) pointing at the OLD IP
-When a lab machine's LAN IP changes (e.g. M3 moved <lan-ip> → aux-node on 2026-08-04),
+When a lab machine's LAN IP changes (e.g. AUX-NODE moved <lan-ip> → aux-node on 2026-08-04),
 every cron whose `base_url` / provider still pins the old IP keeps RUNNING with `last_status:
 ok` — because the shipper can't reach that host to reject. The failure is silent until you look:
-no error, no 400, just nothing delivered (or a fallthrough to a different host). In this lab M3
+no error, no 400, just nothing delivered (or a fallthrough to a different host). In this lab AUX-NODE
 profiles (ip-guard, qa-reviewer → qwen3.5:4b) had providers listing ONLY the dead `.9`, so they
 were effectively unreachable for their assigned model until re-pointed.
 **After any host IP change, re-audit ALL of:**
@@ -435,10 +435,9 @@ When asked to audit scheduling or produce a "what runs when / which machine is f
 timetable, do NOT trust only the Hermes cron list — the the video pipeline self-schedules
 via Windows schtasks + its own APScheduler, so the real picture spans THREE layers.
 Cross-check every LLM-using cron (Hermes + Windows + orchestrator + channel post_times)
-against M2 render windows to find clashes; move offending crons to a free window; and
+against GPU-NODE render windows to find clashes; move offending crons to a free window; and
 separate user/creative output blocks from the sub-agent autonomous window. See
-`references/schedule-timetable-audit.md` for the full audit method + the verified
-2026-08-04 layout (renders 07/11:30/18, M2 blocked 06:50–09:10 / 11:20–13:40 /
+2026-08-04 layout (renders 07/11:30/18, GPU-NODE blocked 06:50–09:10 / 11:20–13:40 /
 17:50–20:10, sub-agent window 20:11–06:49, creative blocks 09:30–11:19 & 14:30–17:49 M–F).
 
 ## PITFALL — self-heal / watchdog that only checks `last_status` flags is DECORATIVE (2026-08-22)
@@ -449,7 +448,7 @@ real breakage**. It checks the flag, not reality. Observed failure (2026-08-22):
   2026-08-20. The self-heal cron saw it but **never restarted it** → 39 days of silent
   non-posting. The self-heal reported green because it only inspected flags, never acted.
 - A **wedged kanban worker process** (Hermes sub-agent, PID alive, 40% CPU, orphaned task)
-  held M2's model slot and blocked TikTok — but no cron inspected *live process state*, so
+  held GPU-NODE's model slot and blocked TikTok — but no cron inspected *live process state*, so
   nothing killed it. The "ok" status was a lie.
 
 **The lesson: a watchdog is only as good as what it verifies. Verify REALITY, not flags:**
@@ -489,7 +488,7 @@ green (`last_status: ok`) but uploaded **3 OLD videos** to the channel instead o
   1. List what the channel actually has now (`powershell python yt_list_channel.py`) — see
      exactly what wrongly went up, don't trust memory.
   2. Confirm where the day's REAL finals live (often the manual/post path keeps them in
-     `test_videos\\`, NOT on the referenced M2 production dir) — the bridge must read THERE.
+     `test_videos\\`, NOT on the referenced GPU-NODE production dir) — the bridge must read THERE.
   3. Add a **same-day filter** (filename prefix `YYYYMMDD_` + channel + `_FINAL`, exclude
      `_TEST/_FIXED/_CAPFIX` staging variants) and pull titles/desc/tags from the day's real
      post-record JSON (e.g. `data/channel-1/content_history.json`) matched by slot/format.
@@ -508,4 +507,4 @@ green (`last_status: ok`) but uploaded **3 OLD videos** to the channel instead o
 ## Verification
 - **Structural equivalence to the known-good cron is sufficient proof** the 400 is gone (same `provider` + `base_url`). You do not need a live run.
 - CAVEAT: `cronjob action=run` may re-arm the schedule (`next_run_at` advances) WITHOUT refreshing `last_status`/`last_run_at`. Do NOT treat a manual run as a clean success/failure signal — watch the next real scheduled fire for `last_status: ok`.
-- A direct live probe (e.g. `curl http://gpu-node-2:11434/v1/chat/completions`) confirms endpoint reachability, but the user may block it; don't depend on it.
+- A direct live probe (e.g. `curl http://gpu-node:11434/v1/chat/completions`) confirms endpoint reachability, but the user may block it; don't depend on it.

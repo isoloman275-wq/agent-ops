@@ -1,7 +1,7 @@
 # Kanban worker silent crash-loop (the operator lab, 2026-07-21)
 
 ## Symptom
-A kanban card assigned to a local-model worker (e.g. `coder` = qwen3.8:27b-132k on M2)
+A kanban card assigned to a local-model worker (e.g. `coder` = <thinking-model> on GPU-NODE)
 gets dispatched by the gateway, the worker process spawns, runs for ~5 minutes
 (~307s), then VANISHES with NO traceback, NO error in the worker log, and ZERO file
 writes. The gateway's dispatcher auto-respawns it on its ~60s interval -> it dies again
@@ -13,7 +13,7 @@ forever, burning cycles, and you only notice because file timestamps never move.
   `ended_at` ~307s apart, `summary`/`error` empty, no files written to the workspace.
 - Worker log (`~/.agent-home/profiles/<p>/logs/agent.log`, surfaced via `/api/logs/<p>`)
   shows NO exception, NO traceback, NO OOM message — the process just stops.
-- M2 model (qwen3.8:27b-132k, 27.8B Q4_K_M, ~23GB VRAM, 196K ctx) confirmed healthy via
+- GPU-NODE model (<thinking-model>, 27.8B Q4_K_M, ~23GB VRAM, 196K ctx) confirmed healthy via
   `/api/ps` — not a model-load failure.
 
 ## Root cause (most likely)
@@ -29,7 +29,7 @@ clean silent PID death at ~5min, NOT a Python exception. Config timeouts were RU
 
 ## The fix that worked
 DO NOT try to make the worker finish the big task. For multi-file / >5min builds the
-LEAD (the main session on M1) implements directly. Workers are fine for SMALL tasks that
+LEAD (the main session on MAIN-NODE) implements directly. Workers are fine for SMALL tasks that
 finish well under 5 min (S1/S2-class work completed fine that way).
 
 Concretely:

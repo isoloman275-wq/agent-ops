@@ -1,6 +1,6 @@
 # LLM Cron Job → no_agent Conversion Pattern
 
-Verified 2026-08-25 ('Daily Devops Digest', job 75bb0bd51994). Use when an LLM-mode
+Verified 2026-08-25 ('Daily Devops Digest', job <cron-id>). Use when an LLM-mode
 cron exists ONLY to run one script and relay its output — those burn API calls,
 hallucinate tool-call syntax ("Model generated invalid tool call"), truncate on
 output limits, and die when the model/provider blinks. A script needs no LLM.

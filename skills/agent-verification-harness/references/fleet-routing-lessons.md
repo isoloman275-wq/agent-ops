@@ -2,9 +2,9 @@
 
 ## 1. Per-task model overrides do NOT hold against profile defaults
 
-`hermes kanban set-model <task> ornith:9b --provider ollama-m1` was accepted
+`hermes kanban set-model <task> <mid-local-model> --provider ollama-m1` was accepted
 ("applies on next dispatch") but dispatch STILL resolved to the assignee
-profile's own default (`qwen3.8:27b @ custom:hemi` → M2). The override is
+profile's own default (`<thinking-model> @ custom:hemi` → GPU-NODE). The override is
 advisory; the profile default wins at spawn time.
 
 **Reliable fix = config-level stripping**: remove the banned host everywhere in
@@ -14,20 +14,20 @@ advisory; the profile default wins at spawn time.
 - `custom_providers:` entries pointing at the host (e.g. `- name: Hemi`)
 Then validate with `python3 -c "import yaml; yaml.safe_load(open(...))"`.
 
-Verified result: after stripping all M2 refs from builder / marketing /
-independent-verifier, the identical swarm ran clean on M1 with zero M2 traffic.
+Verified result: after stripping all GPU-NODE refs from builder / marketing /
+independent-verifier, the identical swarm ran clean on MAIN-NODE with zero GPU-NODE traffic.
 
 ## 2. A user lineup change silently reverses routing assumptions
 
-Between sessions the user changed the lineup: builder's default became M2's
-qwen3.8:27b (not ornith:9b@M1 as last known). Any fleet experiment must start by
+Between sessions the user changed the lineup: builder's default became GPU-NODE's
+<thinking-model> (not <mid-local-model>@MAIN-NODE as last known). Any fleet experiment must start by
 reading the LIVE top-level `model:` block of every involved profile. Never trust
 last session's roster or memory of who-runs-where.
 
 ## 3. Detecting and stopping banned-host routing mid-run
 
 Symptom: worker crash-loops ~60s apart, log lines show
-`base_url=http://gpu-node-2:11434/v1` + HTTP 500 cudaMalloc OOM.
+`base_url=http://gpu-node:11434/v1` + HTTP 500 cudaMalloc OOM.
 Stop sequence: `hermes kanban reclaim <worker_task>` FIRST (archive fails while
 running) → kill orphaned run_agent PIDs → archive all swarm cards (worker,
 verifier, synthesizer, root) → confirm `ps aux | grep run_agent` = 0.
@@ -35,8 +35,8 @@ The banned machine itself takes no harm — its OOM rejections mean nothing allo
 
 ## 4. Verified end-to-end swarm PASS (post-fix)
 
-builder (ornith:9b @ M1) produced artifact to spec → independent-verifier
-(ornith:9b-64k @ M1, adversarial AGENT.md protocol) ran 366s, READ the artifact
+builder (<mid-local-model> @ MAIN-NODE) produced artifact to spec → independent-verifier
+(<mid-local-model> @ MAIN-NODE, adversarial AGENT.md protocol) ran 366s, READ the artifact
 with tools rather than trusting worker claims, completed with
 `Gate: PASS` metadata → synthesizer queued → root DONE. Kanban swarm +
 adversarial verifier profile = production-viable standing quality gate.

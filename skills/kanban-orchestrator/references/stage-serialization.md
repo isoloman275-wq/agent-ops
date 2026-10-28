@@ -7,7 +7,7 @@ clobber each other (last-writer-wins) and silently lose a whole stage.
 
 ## Step 0 — map the file-touch graph
 Read each card body; note which files it touches. Any two cards sharing a file
-must not run concurrently. (Also resolves M2 single-VRAM contention when two
+must not run concurrently. (Also resolves GPU-NODE single-VRAM contention when two
 cards share a model host.)
 
 ## Step 1 — defer every card except the first (reclaim → block → kill)

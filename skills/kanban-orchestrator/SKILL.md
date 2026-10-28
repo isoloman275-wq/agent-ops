@@ -43,7 +43,6 @@ Create Kanban tasks when any of these are true:
 If *none* of those apply — it's a small one-shot reasoning task — use `delegate_task` instead or answer the user directly.
 
 ## Setup — standing up the fleet (do this BEFORE decomposing)
-A Kanban board with only one profile can't fan out — every card lands on that one profile and runs serially. Multi-agent parallelism requires **>=2 named worker profiles** plus one orchestrator. Setup sequence (exact verified commands + the `providers.X` string trap are in `references/kanban-fleet-setup.md`):
 
 1. **Discover what exists.** `hermes profile list` — if only `default` shows, you have nothing to route to yet.
 2. **Decide the roster WITH the user.** Profile names are their call (don't invent them). A proven 4-role shape for a multi-stream dev shop:
@@ -53,7 +52,6 @@ A Kanban board with only one profile can't fan out — every card lands on that 
    - `reviewer` — QA before handoff
 3. **Create profiles** (model choice is the key decision — see VRAM rule below):
    `hermes profile create <name> --clone --description "..."`
-   NOTE: `hermes profile create` has NO `--model` flag. Create with `--clone` (copies config/.env/skills) + a role-specific `--description` (the decomposer routes on the description), THEN set model+provider per-profile with `hermes -p <name> config set model/provider`. Also: `hermes config set providers.<x> '{...}'` stores the provider as a broken JSON *string* — you must re-parse it to a dict afterward (see `references/kanban-fleet-setup.md` for the exact, verified commands incl. this trap and the `ollama-m2` provider add).
 4. **Wire the config** in `~/.agent-home/config.yaml` under `kanban:`:
    - `orchestrator_profile: architect` — auto-decompose routes through this profile
    - `default_assignee: coder` — fallback for unassigned cards
@@ -64,11 +62,11 @@ A Kanban board with only one profile can't fan out — every card lands on that 
 
 ### VRAM contention rule (critical for local-model fleets)
 If two profiles point at **different models on the same Ollama host**, they CANNOT run simultaneously — they contend for one VRAM pool and one serializes. Implications:
-- On a single-inference-box setup (e.g. M2 with `qwen3.8:27b-132k` + `glm-4.7-flash` both loaded), only ONE M2-profile runs at a time. To get true parallelism, put at least one worker on a DIFFERENT host or on cloud (T3/OpenRouter).
-- **Cheap fix that works:** route `coder` to a FREE cloud coding model (e.g. `openrouter/qwen/qwen3-coder:free`, ~$0) so it never touches the local VRAM pool. Then `researcher`/`reviewer` on local M2 run parallel with `coder` on cloud.
+- On a single-inference-box setup (e.g. GPU-NODE with `<thinking-model>` + `<cloud-model>` both loaded), only ONE GPU-NODE-profile runs at a time. To get true parallelism, put at least one worker on a DIFFERENT host or on cloud (T3/OpenRouter).
+- **Cheap fix that works:** route `coder` to a FREE cloud coding model (e.g. `openrouter/qwen/qwen3-coder:free`, ~$0) so it never touches the local VRAM pool. Then `researcher`/`reviewer` on local GPU-NODE run parallel with `coder` on cloud.
 - Before assigning a local model, **verify it's actually loaded**: `curl -s http://<host>:11434/api/tags` — do not trust memory of what "should" be there. (A model can be pulled-but-unloaded; a profile pointing at an unloaded model just stalls.)
-- **Lab topology is set by the USER, not by skill text.** The user is the source of truth on which model lives on which machine. A skill (e.g. `ornith-agent`) may carry a STALE claim like "ornith:9b does NOT run anywhere" — the user confirmed ornith:9b IS live on M1 (via `ollama list` on M1, 2026-07-19). When a skill's claim contradicts the user's stated topology, the skill is wrong, not the user. Do NOT re-scan the network and override the user's word with a stale skill line. See pitfall "Don't re-probe to override the user's topology" below.
-- Note: `ornith:35b-q4_K_M` is also live (on M2, as the Etsy listing-copywriter). ornith:9b on M1 is a valid candidate worker host but M1's Windows Ollama is localhost-only from WSL unless `OLLAMA_HOST=0.0.0.0` is set on M1.
+- **Lab topology is set by the USER, not by skill text.** The user is the source of truth on which model lives on which machine. A skill (e.g. `ornith-agent`) may carry a STALE claim like "<mid-local-model> does NOT run anywhere" — the user confirmed <mid-local-model> IS live on MAIN-NODE (via `ollama list` on MAIN-NODE, 2026-07-19). When a skill's claim contradicts the user's stated topology, the skill is wrong, not the user. Do NOT re-scan the network and override the user's word with a stale skill line. See pitfall "Don't re-probe to override the user's topology" below.
+- Note: `<large-local-model>` is also live (on GPU-NODE, as the Etsy listing-copywriter). <mid-local-model> on MAIN-NODE is a valid candidate worker host but MAIN-NODE's Windows Ollama is localhost-only from WSL unless `OLLAMA_HOST=0.0.0.0` is set on MAIN-NODE.
 
 ### Dashboard
 The `dashboard:` block in config.yaml enables the local UI. OAuth (`oauth.client_id`, `public_url`) is ONLY needed to expose it publicly — local viewing works with those empty. If the user wants to watch from another machine/phone, that's when to fill OAuth in.
@@ -240,7 +238,7 @@ kanban.db status-poll one-liner and the verify-then-unblock loop):
 
 ## Pitfalls
 
-**Don't re-probe the network to override the user's stated lab topology.** If the user says "M1 has ornith:9b" or "M2 is the local-Ollama box," treat that as ground truth. Scanning the subnet and concluding "no ornith found, so you're wrong" is a failure mode that burned a real session — the scan may hit the wrong IP (WSL NAT hides the Windows host LAN IP), or a model may be on a different port/host than the scan covered. When a live probe appears to contradict the user, the probe/assumption is wrong, not the user. Verify by asking the user for the exact endpoint rather than declaring the user mistaken. (This lab: M1 runs Hermes + T3 and hosts ornith:9b on Windows Ollama; M2 = gpu-node-2 local Ollama; M3 = aux-node tiny qwen3.5. These are user-stated and authoritative. NOTE: M3 moved <lan-ip> → aux-node on 2026-08-04.)
+**Don't re-probe the network to override the user's stated lab topology.** If the user says "MAIN-NODE has <mid-local-model>" or "GPU-NODE is the local-Ollama box," treat that as ground truth. Scanning the subnet and concluding "no ornith found, so you're wrong" is a failure mode that burned a real session — the scan may hit the wrong IP (WSL NAT hides the Windows host LAN IP), or a model may be on a different port/host than the scan covered. When a live probe appears to contradict the user, the probe/assumption is wrong, not the user. Verify by asking the user for the exact endpoint rather than declaring the user mistaken. (This lab: MAIN-NODE runs Hermes + T3 and hosts <mid-local-model> on Windows Ollama; GPU-NODE = gpu-node local Ollama; AUX-NODE = aux-node tiny qwen3.5. These are user-stated and authoritative. NOTE: AUX-NODE moved <lan-ip> → aux-node on 2026-08-04.)
 
 **Inventing profile names that don't exist.** The dispatcher silently fails to spawn unknown assignees — the card just sits in `ready` forever. Always assign to a profile from your Step 0 discovery; ask the user if you're unsure.
 
@@ -268,12 +266,12 @@ When a worker profile keeps crashing, hallucinating, or getting blocked by its o
 
 Hallucination warnings appear on tasks where a worker's `kanban_complete(created_cards=[...])` claim included card ids that don't exist or weren't created by the worker's profile (the gate blocks the completion), or where the free-form summary references `t_<hex>` ids that don't resolve (advisory prose scan, non-blocking). Both produce audit events that persist even after recovery actions — the trail stays for debugging.
 
-## PITFALL — orphaned worker holds M2 while its board is empty/corrupted (2026-08-22)
+## PITFALL — orphaned worker holds GPU-NODE while its board is empty/corrupted (2026-08-22)
 A worker can be **alive** (`ps` shows it at 40% CPU) but its task `t_xxx` no longer exists in
 any readable `board.json` (the board got corrupted/emptied — `overnight-build` showed 0 cards).
 In that state the dashboard shows NO ⚠ badge (no card to flag), so the standard Recovery
 actions (reclaim/reassign) can't target it — but the process is STILL holding the profile's
-model slot on M2, which blocks other workloads (e.g. TikTok's 11:30 post hit a 404 because the
+model slot on GPU-NODE, which blocks other workloads (e.g. TikTok's 11:30 post hit a 404 because the
 slot was occupied). Symptom the user sees: "everything's stuck, nothing fired, but no error."
 
 **Detection (not via the dashboard — it's blind here):**
@@ -294,4 +292,4 @@ finds nothing, it's orphaned.
 
 **Lesson:** a wedged worker is an outage even without a ⚠ badge. The self-heal cron must check
 *live `ps` state*, not just kanban flags, and `kill -9` orphaned workers holding shared
-resources (M2 model slot). See hermes-cron-management "self-heal checks flags not reality".
+resources (GPU-NODE model slot). See hermes-cron-management "self-heal checks flags not reality".

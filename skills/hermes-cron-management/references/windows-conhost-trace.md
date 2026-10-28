@@ -5,8 +5,8 @@ need to find which process owns each visible console window. Every visible conso
 `conhost.exe`; its `ParentProcessId` is the process that opened it. Kill the parent → the window dies.
 
 ## WSL → PowerShell quoting GOTCHAS (burned us twice)
-- Backslashes in `-File 'C:\Users\Admin\x.ps1'` get STRIPPED by the shell if not single-quoted.
-  Always single-quote the Windows path: `powershell.exe -File 'C:\Users\Admin\x.ps1'`.
+- Backslashes in `-File 'C:\Users\<you>\x.ps1'` get STRIPPED by the shell if not single-quoted.
+  Always single-quote the Windows path: `powershell.exe -File 'C:\Users\<you>\x.ps1'`.
 - Do NOT inline a multi-line `Get-CimInstance` pipeline through `powershell.exe -Command "..."` —
   `$($_.ParentProcessId)` subexpressions and backticks get mangled by the shell. Write a `.ps1`
   file to a WINDOWS path (PowerShell can't see `/home/...` via `-File`), then run it.
@@ -14,8 +14,8 @@ need to find which process owns each visible console window. Every visible conso
   Use `Start-Sleep -Seconds 2` (positive) or just omit the sleep.
 
 ## The reliable one-shot probe
-1. Write a `.ps1` to a Windows path: `cp /path/to/projects /mnt/c/Users/Admin/x.ps1`
-2. Run it: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\Users\Admin\x.ps1'`
+1. Write a `.ps1` to a Windows path: `cp /path/to/projects <windows-home>/x.ps1`
+2. Run it: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\Users\<you>\x.ps1'`
 
 ## Probe script (maps conhost → parent → command line)
 ```powershell

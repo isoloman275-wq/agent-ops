@@ -12,20 +12,20 @@ This lab runs `hermes kanban` auto-dispatch ON with no circuit breaker. Two real
 incidents proved the gap: t_f4d9bbe9 hard-looped ~50x on a missing skill until
 manually archived; t_76c45f57 died silently (no failure event) on an OOM/handshake
 crash. A breaker prevents both: it blocks runaway cards and surfaces a diagnosis
-instead of burning M2 cycles or dying quietly.
+instead of burning GPU-NODE cycles or dying quietly.
 
 ## Verified anchors (this lab)
 - Kanban CLI: `hermes kanban` — subcommands: list, log <id>, diag, stats, reclaim,
   archive, gateway, profiles.
 - Failure signal: `hermes kanban log <card_id> 2>&1 | grep -c "Error:"`.
-- Ollama endpoints: M1 main-node:11434, M2 gpu-node-2:11434, M3 aux-node:11434.
+- Ollama endpoints: MAIN-NODE main-node:11434, GPU-NODE gpu-node:11434, AUX-NODE aux-node:11434.
   Resident models: `curl -s http://<ip>:11434/api/ps`.
 - Models (routing tiers — AUTHORITATIVE 2026-07-30):
-  qwen3.8:27b-132k (thinking model, M2 ONLY; gemma4 + dup qwen3.8:27b-132k removed; == qwen3.8:27b-132k
-  same weights; 256K ctx). NO ornith:35b / "hermes-35b" exists (any skill citing it is WRONG).
-  architect→qwen3.8:27b-132k (M2); coder→OpenRouter tencent/hy3 (cloud, off-M2); researcher/reviewer→
-  qwen3.8:27b-132k (M2); builder/data-analyst→ornith:9b (M1); copywriter/devops/ip-guard→qwen3.5:4b (M3);
-  qwen3.5:2b (M3 aux).
+  <thinking-model> (thinking model, GPU-NODE ONLY; <alt-model> + dup <thinking-model> removed; == <thinking-model>
+  same weights; 256K ctx). NO <large-local-model> / "hermes-35b" exists (any skill citing it is WRONG).
+  architect→<thinking-model> (GPU-NODE); coder→OpenRouter tencent/hy3 (cloud, off-GPU-NODE); researcher/reviewer→
+  <thinking-model> (GPU-NODE); builder/data-analyst→<mid-local-model> (MAIN-NODE); copywriter/devops/ip-guard→qwen3.5:4b (AUX-NODE);
+  qwen3.5:2b (AUX-NODE aux).
 - All 9 profiles set `delegation.reasoning_effort: none` (thinking OFF) — done 2026-07-30 (user prefers
   system-wide fixes).
 
@@ -39,7 +39,7 @@ instead of burning M2 cycles or dying quietly.
      t_711f9a89 / t_76c45f57 pattern (2026-08-05): a worker spawned by auto-dispatch exits cleanly
      (rc=0) WITHOUT calling `kanban_complete` or `kanban_block`, so the dispatcher counts
      each as a crash and RE-DISPATCHES — producing a never-ending ~60s loop (4300+ runs
-     in this incident) that churns M2/cloud cycles and floods the task_events log. Retry
+     in this incident) that churns GPU-NODE/cloud cycles and floods the task_events log. Retry
      can never succeed because the worker has no bug to fix in its work — it's the worker
      harness failing to signal completion. Fix = `hermes kanban archive <id>` (or
      `block` then `archive`; note `block --reason` is NOT a valid flag). Kill any stray
@@ -47,14 +47,14 @@ instead of burning M2 cycles or dying quietly.
      the #1 reason a kanban task shows `running` indefinitely with zero progress — the
      dispatcher is re-spawning it in a loop, not that the task is legitimately long.
    - 2 failures, same error_class → RETRY ONCE on a smaller/off-machine model.
-     Reality 2026-07-30: M2 is hermes-ONLY (no smaller local model), so a qwen3.8:27b-132k
-     OOM can't be downgraded in-place — REASSIGN the card to ornith:9b (M1, builder) or
-     coder=hy3 (cloud, off-M2) instead. Changing a profile's model is a CONFIG change →
+     Reality 2026-07-30: GPU-NODE is hermes-ONLY (no smaller local model), so a <thinking-model>
+     OOM can't be downgraded in-place — REASSIGN the card to <mid-local-model> (MAIN-NODE, builder) or
+     coder=hy3 (cloud, off-GPU-NODE) instead. Changing a profile's model is a CONFIG change →
      if kanban supports a per-task model override, use it; otherwise ALERT for human
      sign-off (do not silently edit profile config — HARD RULE).
    - 3 failures, any class → set card status BLOCKED, write failure summary into the
      card, send gateway alert (Telegram) with card_id + last error.
-   - error_class = oom from an M2 model → also `curl -s http://gpu-node-2:11434/api/ps`;
+   - error_class = oom from an GPU-NODE model → also `curl -s http://gpu-node:11434/api/ps`;
      if >1 large model resident, recommend unloading extras before retry (see
      ollama-fit-optimizer).
 4. Heartbeat guard for silent deaths: a worker must touch its card every 120s;
@@ -78,10 +78,10 @@ instead of burning M2 cycles or dying quietly.
 - Never downgrade architect below hermes-9b (architecture on a 4b is confidently wrong).
 - Do not turn auto-dispatch OFF — the breaker replaces the need for that blunt fix.
 - Log every breaker action to fact_store so weekly incident synthesis can update skills.
-- M2 is now hermes-ONLY (no smaller local model). A qwen3.8:27b-132k OOM on M2 cannot be
-  downgraded in-place — REASSIGN the card to ornith:9b (M1, builder) or coder=hy3 (cloud,
-  off-M2) instead of stepping down a (non-existent) smaller M2 model. (S4/t_76c45f57 recovered
-  this way 2026-07-30: it had blocked on an M2 OOM; unblocked onto coder/hy3 it ran off-M2.)
+- GPU-NODE is now hermes-ONLY (no smaller local model). A <thinking-model> OOM on GPU-NODE cannot be
+  downgraded in-place — REASSIGN the card to <mid-local-model> (MAIN-NODE, builder) or coder=hy3 (cloud,
+  off-GPU-NODE) instead of stepping down a (non-existent) smaller GPU-NODE model. (S4/t_76c45f57 recovered
+  this way 2026-07-30: it had blocked on an GPU-NODE OOM; unblocked onto coder/hy3 it ran off-GPU-NODE.)
 - UNBLOCK + REDISPATCH: `hermes kanban unblock <id>` releases a blocked card and the gateway
   auto-dispatches it. Reassign to a cloud-capable profile first to run it off a constrained machine.
 - DATA FRESHNESS: all worker searches must use the live current date (enforced via

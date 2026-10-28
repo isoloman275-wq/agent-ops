@@ -6,17 +6,17 @@ next session starts knowing.
 
 ## 1. Serve local dashboards over HTTP, never file://
 
-A browser tab opened from `file:///home/.../dashboard.html` CANNOT `fetch()` a
+A browser tab opened from `file:///home/.../dashboard.html` cannot issue a browser HTTP request to
 local JSON file — the browser blocks `file://` to `file://` XHR/fetch as a CORS
 violation. Result: the page renders its static shell (stream cards, layout) but
-every `fetch('/home/.../status.json')` silently fails, so GPU/kanban/crons/skills
+every browser request for '/home/.../status.json' silently fails, so GPU/kanban/crons/skills
 stay blank and the dashboard looks "dead / not live".
 
 FIX (verified working):
 - Start a static server from the dashboard dir:
   `cd ~/.agent-home/dashboard && python3 -m http.server 8788 --bind 127.0.0.1`
   (run as a long-lived background process; it never exits).
-- Point every HTML page's `fetch()` at `http://127.0.0.1:8788/status.json`
+- Point every HTML page's browser HTTP requests to `http://127.0.0.1:8788/status.json`
   (use sed to swap the `file://...status.json` path for the HTTP URL across
   all dashboard HTML files at once).
 - Open the page in preview as `http://127.0.0.1:8788/mission-control-v2.html`
@@ -24,7 +24,7 @@ FIX (verified working):
 
 The collector (`dashboard_collector.py`, cron `*/2 * * * *`) writes
 `status.json` from live sources (GPU via ssh nvidia-smi, TikTok
-content_history.json post count, kanban, crons, M3 api/ps, skills dir). The
+content_history.json post count, kanban, crons, AUX-NODE api/ps, skills dir). The
 server just exposes it. Keep both: collector (data) + http.server (delivery).
 
 ## 2. Cron nudges must deliver where the user will see them

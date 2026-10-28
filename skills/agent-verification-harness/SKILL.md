@@ -11,9 +11,9 @@ A/B/C benchmark on 10 verifiable tasks, graded by a Python oracle (no LLM gradin
 
 | Condition | Accuracy | Latency | Verdict |
 |---|---|---|---|
-| A: bare cheap model (qwen3.5:2b-aux @ M3) | 9-10/10 | ~190s | baseline |
+| A: bare cheap model (<small-aux-model> @ AUX-NODE) | 9-10/10 | ~190s | baseline |
 | B: worker + self-critique ("check your own answer") | 9-10/10 | ~2x | **zero gain — dead pattern** |
-| C: worker + INDEPENDENT verifier (ornith:9b @ M1) | 9/10 | ~2x | **caught the blind-spot error every run** |
+| C: worker + INDEPENDENT verifier (<mid-local-model> @ MAIN-NODE) | 9/10 | ~2x | **caught the blind-spot error every run** |
 
 Key finding (reproduced 3 runs): on t05 (list primes < 20), the worker dropped "19".
 Self-critique REPEATED its own error both times it occurred. The independent
@@ -38,7 +38,7 @@ Script: `hermes-workspace/verify-bench/verify_bench.py` (hosts/model names at to
 ## Wiring into Hermes kanban (done 2026-08-24)
 
 `hermes kanban swarm --worker 'profile:title' --verifier independent-verifier --synthesizer <profile> '<goal>'`
-- `~/.agent-home/profiles/independent-verifier/` = ornith:9b-64k @ ollama-m1, with an AGENT.md
+- `~/.agent-home/profiles/independent-verifier/` = <mid-local-model> @ ollama-m1, with an AGENT.md
   adversarial protocol: verify acceptance criteria line-by-line WITH TOOLS; claims without
   tool evidence are UNVERIFIED=FAIL; PASS only via kanban_complete metadata `{"gate":"pass"}`;
   FAIL via block with a numbered defect list. Judge, don't improve.
@@ -47,7 +47,7 @@ Script: `hermes-workspace/verify-bench/verify_bench.py` (hosts/model names at to
 
 ### CRITICAL PITFALL — provider fallback silently violates machine bans (hit first wiring test)
 Worker profiles carry fallback providers (builder: primary ollama-m1, FALLBACK ollama-m2).
-When primary is slow/wedged, the runtime silently routed to qwen3.8:27b ON M2 → OOM crash-loop
+When primary is slow/wedged, the runtime silently routed to <thinking-model> ON GPU-NODE → OOM crash-loop
 ×12 and unauthorized load on a machine the user had banned that day. Checks before ANY dispatch:
 1. Grep assignee profile config.yaml fallback chains vs current user machine-access rules;
    strip banned hosts (with user approval — profiles are his).
@@ -55,7 +55,7 @@ When primary is slow/wedged, the runtime silently routed to qwen3.8:27b ON M2 �
 3. After spawn, READ THE FIRST LOG LINES for the resolved base_url — config alone lies.
 4. Emergency stop when it hits a banned host: reclaim + archive ALL swarm cards (worker,
    verifier, synthesizer — archive fails while running, so reclaim first), kill orphaned PIDs,
-   verify zero worker processes remain. M2 was unharmed (requests rejected, never allocated).
+   verify zero worker processes remain. GPU-NODE was unharmed (requests rejected, never allocated).
 
 ## Swarm-loop ownership (user rule for multi-node watch/swarm ops)
 
@@ -95,13 +95,13 @@ with thinking off.
 
 ## Verifier Sizing Rule (NON-NEGOTIABLE)
 **Agent-grade models MUST use `num_ctx` 65536 (64K minimum) — no more, no less.**
-- Sub-64K variants (e.g. `ornith:9b-verifier` @ 8K) are SPECIAL-PURPOSE ONLY
+- Sub-64K variants (e.g. `<mid-local-model>-verifier` @ 8K) are SPECIAL-PURPOSE ONLY
   (tiny prompts, raw API callers) and can NEVER be a Hermes profile model
 - Create via `/api/create` with a `parameters` dict (NOT a raw modelfile string):
-  `{\"model\":\"ornith:9b-64k\",\"from\":\"ornith:9b\",\"parameters\":{\"num_ctx\":65536,\"num_gpu\":34}}`
-- M3 ships num_ctx 64000 already — do not re-configure
+  `{\"model\":\"<mid-local-model>\",\"from\":\"<mid-local-model>\",\"parameters\":{\"num_ctx\":65536,\"num_gpu\":34}}`
+- AUX-NODE ships num_ctx 64000 already — do not re-configure
 
-## Related wedge lesson (M1 Windows Ollama reload-loop)
+## Related wedge lesson (MAIN-NODE Windows Ollama reload-loop)
 
 Verifier timeouts during the bench were NOT VRAM starvation: timed-out jobs sat in Ollama's
 request queue and re-requested the model after each llama-server kill → reload-loop at 128K ctx

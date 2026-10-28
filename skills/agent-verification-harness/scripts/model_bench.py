@@ -8,9 +8,9 @@ import json, time, urllib.request, sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from verify_bench import TASKS
 
-MODEL = sys.argv[1] if len(sys.argv) > 1 else "ornith:9b"
+MODEL = sys.argv[1] if len(sys.argv) > 1 else "<mid-local-model>"
 NUM_GPU = int(sys.argv[2]) if len(sys.argv) > 2 else 41
-BASE = "http://172.21.192.1:11434/api/generate"
+BASE = "http://<wsl-gateway-ip>:11434/api/generate"
 
 def gen(prompt, timeout=240):
     body = json.dumps({"model": MODEL, "prompt": prompt, "stream": False,

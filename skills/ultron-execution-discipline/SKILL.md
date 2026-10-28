@@ -32,7 +32,7 @@ If you cannot verify the deliverable, say so and try another path. Never present
 hypothesized fix as a verified outcome.
 
 ## RULE 3 — BUILDING A GATEKEEPER ≠ WIRING IT
-This lab is full of half-finished "solutions": `m2_arbiter.py` (the M2 collision
+This lab is full of half-finished "solutions": `m2_arbiter.py` (the GPU-NODE collision
 gate) was written with a docstring saying "every cron/worker MUST call this" — but
 NOT ONE caller was edited to actually invoke it. Same pattern with watchdogs,
 unload helpers, self-heal scripts. A script that exists but is never called from the
@@ -42,7 +42,7 @@ real run goes through it.
 
 ## RULE 4 — NEVER SLEEP ON THE JOB (always-on)
 the operator wants the agent autonomous and always working, not waiting for prompts. If idle
-compute exists (M2 free VRAM, M1/M3 idle), use it: run a real build, training step,
+compute exists (GPU-NODE free VRAM, MAIN-NODE/AUX-NODE idle), use it: run a real build, training step,
 self-improve sweep — not a "report of what could be done". Set 2-min nudge crons
 (see tiktok-pipeline-ops Rule 55) so silence itself is flagged. When a user correction
 lands, execute the fix immediately, don't schedule it for "later".
@@ -91,7 +91,6 @@ the deliverable. Specifically for Taskmarket:
   commitment reply, write + submit the exact `growth-participant-0x*.json` artifact).
   Don't wait for the user to walk you through it.
 - Submit real deliverables (articles, reports, training runs) immediately — the
-  `references/taskmarket-working-flow.md` has the verified submit/enroll sequence.
 - The agent CREATED the taskmarket agent autonomously (keystore Aug 18) and burned
   compute on it WITHOUT user sign-off — that's the failure mode to avoid going
   forward: don't spin up NEW accounts/services the user didn't authorize, but ONCE
@@ -124,8 +123,8 @@ agent was locked out of reading it.
 
 ## RULE 6 — DASHBOARDS: SERVE OVER HTTP, DELIVER TO TELEGRAM
 Two "looks fine, isn't" traps cost a full session of "why is MC dead?":
-- **file:// pages can't fetch() local JSON.** A dashboard built as a `file://` HTML that
-  does `fetch('status.json')` silently fails CORS — the page renders but every live
+- **file:// pages cannot request local JSON over HTTP from a file:// page.** A dashboard built as a `file://` HTML that
+  requests 'status.json' it silently fails CORS — the page renders but every live
   metric stays blank, so it looks broken/dead. FIX: serve the dir with
   `python3 -m http.server 8788 --bind 127.0.0.1` and point pages at
   `http://127.0.0.1:8788/status.json`. (Set it up as a background process so it
@@ -135,7 +134,7 @@ Two "looks fine, isn't" traps cost a full session of "why is MC dead?":
   it "does nothing". Set `deliver: telegram:the operator` so the poke actually reaches them.
 
 ## RULE 7 — AUDIT DOCKER, NOT JUST `ps`
-`ps` / `grep` misses containerized ghosts. `docker ps -a` on M2 revealed `n8n` (up 3
+`ps` / `grep` misses containerized ghosts. `docker ps -a` on GPU-NODE revealed `n8n` (up 3
 months, port 5678) and `open_webui` (up, port 8080) that NO process audit had caught —
 both squatting RAM, neither serving any known lab function (n8n was never installed by
 the agent; open_webui was a half-finished attempt). To actually stop them: `docker stop
@@ -149,11 +148,11 @@ scheduled `run_pipeline` jobs (7:00/11:30/18:00 NZT) render+post. After any manu
 render, run `orchestrator.py --post-due` (Windows Python 3.14) or the video sits
 
 ## RULE 13 — EVIDENCE BEFORE CLAIM (absorbed from `evidence-before-claim`)
-Full text: `references/evidence-before-claim.md` (+ worked example `loot-survivor-m2-gpu.md`).
+Full text: `references/evidence-before-claim.md`.
 - **Proof precedes the claim, IN THE SAME TURN.** No check this turn ⇒ the only honest sentence is
   "I haven't checked yet, checking" — never a confident conclusion from memory or plausibility.
 - **Empty probe ≠ nonexistence.** "Not found at THIS place" is never "doesn't exist" — sweep all
-  relevant paths, processes, and live state before concluding (costly session: declared "no venv on M2"
+  relevant paths, processes, and live state before concluding (costly session: declared "no venv on GPU-NODE"
   from one `ls` while a build ran on another disk).
 - **After "no"/"stop"/veto: halt COMPLETELY.** Do not relaunch, continue, or ask to proceed — kill it if
   running. Re-launching after a veto is the worst offense in the lab.
@@ -164,7 +163,7 @@ Full text: `references/evidence-before-claim.md` (+ worked example `loot-survivo
 ## RULE 14 — AUTOMATED VERIFY-BEFORE-CLAIM (enforced since 2026-08-24)
 An enforcement engine (`verify_guard.py` in `skills/devops/verify-before-claim/`) now scans every
 outgoing response for factual assertions about lab state and probes them live before delivery:
-- **M2/M3/M1** process + GPU + Ollama state (via SSH + Ollama API)
+- **GPU-NODE/AUX-NODE/MAIN-NODE** process + GPU + Ollama state (via SSH + Ollama API)
 - **ComfyUI** queue status, **TikTok** pipeline posting, **training** job state
 - **Docker** container audits, **file/disk** existence, **balance** claims
 - Wired as a `post_tool_call` hook in `~/.agent-home/config.yaml`
@@ -195,12 +194,12 @@ last responsible moment after re-checking the live leaderboard. Scores keep
 improving while lanes run, and early submits leak timing/strategy. Full
 verified playbook (score model, config results table, eligibility rejects,
 resume traps, SWA+temperature negative result, untried levers):
-`references/loot-survivor-runbook.md`.
+
 
 ## RULE 18 - TARGET-STATE DISCIPLINE: PIN THE TARGET, DONT LOOP ON STALE VALUES
 (2026-08-31, cost an hour of dead pings repeated 4+ times in one session.) During a live
 engagement the user gave a NEW target IP mid-session; the agent kept scanning the OLD IP
-(dead box), re-narrating stale recon, and asking for the IP back even after it was
+(dead box), re-narrating stale notes from a previous session, and asking for the address back even after it was
 supplied repeatedly. Hard rules:
 - The users LAST stated target/parameter is ground truth. A mid-session correction
   (for example: wrong IP, renamed path, changed host) OVERRIDES everything said
@@ -213,7 +212,7 @@ supplied repeatedly. Hard rules:
   session search, working files) to re-ground, THEN act. A truncated context is not
   permission to re-run stale probes.
 - Keep a target fingerprint line in working notes (TARGET=<ip> <name>) and check it
-  before every scan/recon command so a stale literal cannot slip in.
+  before every scan or enumeration command so a stale literal cannot slip in.
 
 ## CROSS-REFERENCES
 - `references/process-and-serve-verification.md` — restart discipline for agent-launched local panels/servers (never `pkill -f <name>; start` in one command — bracket-trick PID kill, port-free check via `ss -tlnp`, single instance, curl-verify the SERVED build marker) and in-page `?demo=1` click-probe verification for web UIs (synthetic browser-tool click reports can claim success while page JS never fires; Rules 2+13 companions).
@@ -221,7 +220,5 @@ supplied repeatedly. Hard rules:
 - `hermes-cron-management` — cron self-heal / ghost-cron audit pattern.
 - `references/lab-dashboard-and-cron-visibility.md` — HTTP-serve dashboards +
   `deliver: telegram:the operator` for nudges (Rules 6).
-- `references/taskmarket-working-flow.md` — verified Taskmarket enroll/submit
-  sequence, endpoint-blindness fix, and the Loot Survivor (death-gym) CUDA-train
-  path on M2 (Rules 9 + 12).
-
+  sequence and endpoint-blindness fix
+  path on GPU-NODE (Rules 9 + 12).

@@ -32,7 +32,7 @@ confirmed a gateway-availability gap, not a single-job config break.
 ## Remediation applied
 1. `cronjob action=run job_id=fd24bd552906` — re-fired under the now-live gateway.
 2. Offered three fixes (in order of robustness):
-   - Run gateway on always-on M2 (gpu-node-2) — survives desktop sleep/reboot.
+   - Run gateway on always-on GPU-NODE (gpu-node) — survives desktop sleep/reboot.
    - Auto-start on WSL login via systemd-user service / shell init.
    - External OS-level watchdog (NOT Hermes cron) that restarts a dead gateway.
 

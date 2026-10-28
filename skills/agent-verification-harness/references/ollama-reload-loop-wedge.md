@@ -1,8 +1,8 @@
-# Ollama reload-loop wedge (M1 Windows, 2026-08-24) — diagnosis + fix
+# Ollama reload-loop wedge (MAIN-NODE Windows, 2026-08-24) — diagnosis + fix
 
 ## Symptom
 
-Generate calls to a model on M1's Windows Ollama hang/timeout indefinitely even
+Generate calls to a model on MAIN-NODE's Windows Ollama hang/timeout indefinitely even
 for trivial prompts ("17*23"), while `/api/tags` stays healthy. Killing
 llama-server.exe spawns a fresh one that re-wedges. `keep_alive:0` unload
 attempts appear to succeed but the model reappears in `/api/ps` seconds later.
@@ -23,7 +23,7 @@ NOT simple VRAM starvation:
 Get-CimInstance Win32_Process -Filter "Name='llama-server.exe'"   # confirm wedge
 Stop-Process -Name llama-server -Force
 Stop-Process -Id <ollama serve pid> -Force        # wipes the request queue
-Start-Process 'C:\Users\Admin\AppData\Local\Programs\Ollama\ollama.exe' -ArgumentList 'serve' -WindowStyle Hidden
+Start-Process 'C:\Users\<you>\AppData\Local\Programs\Ollama\ollama.exe' -ArgumentList 'serve' -WindowStyle Hidden
 # verify /api/ps shows NONE resident, THEN immediately load the capped variant:
 curl /api/generate -d '{"model":"<capped-variant>","prompt":"...","options":{"num_ctx":8192},"keep_alive":1800}'
 ```

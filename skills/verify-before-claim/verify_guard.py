@@ -13,7 +13,7 @@ proved by a live tool call in the same turn. This module provides:
 
 Usage:
     from verify_guard import guard
-    result = guard(response_text="M2 is free and qwen3.8 is not loaded")
+    result = guard(response_text="GPU-NODE is free and qwen3.8 is not loaded")
     # result.verdict  → "PASS" | "FAIL" | "UNVERIFIED" | "CLEAN"
     # result.evidence → list of probe results
     # result.blocked  → sanitized text with unverified claims redacted
@@ -23,7 +23,7 @@ Run standalone for testing:
 
 CLI:
     python3 verify_guard.py --probe-only              # Run all probes, print results
-    python3 verify_guard.py --check-text "M2 is free"  # Check specific text
+    python3 verify_guard.py --check-text "GPU-NODE is free"  # Check specific text
     python3 verify_guard.py --check-text "text" --json # JSON output
 """
 
@@ -111,19 +111,19 @@ CLAIM_PATTERNS: List[Tuple[re.Pattern, str, str, str]] = [
         re.IGNORECASE
     ), "ollama_model", "Ollama model presence/absence claim", "high"),
 
-    # ── M2/M3/M1 machine state ───────────────────────────────────────────
+    # ── GPU-NODE/AUX-NODE/MAIN-NODE machine state ───────────────────────────────────────────
     (re.compile(
         r"\bM2\b\s+(?:machine\s+)?(?:is\s+)?(free|idle|busy|running|has\s+(?:nothing|qwen|ollama|model|only))",
         re.IGNORECASE
-    ), "process", "M2 machine state claim", "critical"),
+    ), "process", "GPU-NODE machine state claim", "critical"),
     (re.compile(
         r"\bM3\b\s+(?:machine\s+)?(?:is\s+)?(free|idle|busy|running|has\s+(?:nothing|qwen|ollama|model|only))",
         re.IGNORECASE
-    ), "process", "M3 machine state claim", "critical"),
+    ), "process", "AUX-NODE machine state claim", "critical"),
     (re.compile(
         r"\bM1\b\s+(?:machine\s+)?(?:is\s+)?(free|idle|busy|running|has\s+(?:nothing|qwen|ollama|model|only))",
         re.IGNORECASE
-    ), "process", "M1 machine state claim", "critical"),
+    ), "process", "MAIN-NODE machine state claim", "critical"),
 
     # ── ComfyUI state ────────────────────────────────────────────────────
     (re.compile(
@@ -262,7 +262,7 @@ CLAIM_PATTERNS: List[Tuple[re.Pattern, str, str, str]] = [
 def _run_cmd(cmd: str, timeout: int = 15, host: Optional[str] = None) -> Tuple[int, str, str]:
     """Run a shell command and return (exit_code, stdout, stderr).
 
-    If host is specified (e.g. 'llm-user@gpu-node-2'), runs via SSH.
+    If host is specified (e.g. 'llm-user@gpu-node'), runs via SSH.
     Otherwise runs locally.
     """
     try:
@@ -286,16 +286,16 @@ def _run_cmd(cmd: str, timeout: int = 15, host: Optional[str] = None) -> Tuple[i
 
 
 def probe_m2_state() -> ProbeResult:
-    """Check M2 state: processes, GPU, Ollama models, disk.
+    """Check GPU-NODE state: processes, GPU, Ollama models, disk.
 
-    NOTE: M2 is gpu-node-2 (llm-user@M2). SSH key auth required.
+    NOTE: GPU-NODE is gpu-node (llm-user@GPU-NODE). SSH key auth required.
     Single-model rule: only one model job at a time on the 24GB pool.
     """
-    claim = "M2 state (process + GPU + Ollama + disk)"
-    host = "llm-user@gpu-node-2"
+    claim = "GPU-NODE state (process + GPU + Ollama + disk)"
+    host = "llm-user@gpu-node"
 
     # Ollama models
-    rc, out, _ = _run_cmd("curl -s --max-time 5 http://gpu-node-2:11434/api/ps 2>/dev/null || echo 'OLLAMA_UNREACHABLE'", host=host)
+    rc, out, _ = _run_cmd("curl -s --max-time 5 http://gpu-node:11434/api/ps 2>/dev/null || echo 'OLLAMA_UNREACHABLE'", host=host)
     ollama_models = "UNREACHABLE"
     ollama_ok = False
     if rc == 0 and "OLLAMA_UNREACHABLE" not in out:
@@ -310,7 +310,7 @@ def probe_m2_state() -> ProbeResult:
         except (json.JSONDecodeError, KeyError):
             ollama_models = f"PARSE_ERROR"
 
-    # GPU state (nvidia-smi on M2)
+    # GPU state (nvidia-smi on GPU-NODE)
     rc2, gpu_out, _ = _run_cmd(
         "nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv,noheader,nounits 2>/dev/null || echo 'GPU_UNREACHABLE'",
         host=host, timeout=10
@@ -340,18 +340,18 @@ def probe_m2_state() -> ProbeResult:
         category="process",
         verified=True,
         evidence=evidence,
-        probe_cmd="ollama_api + nvidia-smi + ps aux + df (SSH M2)",
+        probe_cmd="ollama_api + nvidia-smi + ps aux + df (SSH GPU-NODE)",
         probe_time=datetime.now(timezone.utc).isoformat(),
     )
 
 
 def probe_m3_state() -> ProbeResult:
-    """Check M3 state: Ollama models, process state.
+    """Check AUX-NODE state: Ollama models, process state.
 
-    M3 is reachable at aux-node but SSH may be limited.
+    AUX-NODE is reachable at aux-node but SSH may be limited.
     Ollama port :11434 is accessible from WSL subnet.
     """
-    claim = "M3 state (Ollama + process)"
+    claim = "AUX-NODE state (Ollama + process)"
     rc, out, _ = _run_cmd(
         "curl -s --max-time 5 http://aux-node:11434/api/ps 2>/dev/null || echo 'OLLAMA_UNREACHABLE'"
     )
@@ -365,18 +365,18 @@ def probe_m3_state() -> ProbeResult:
         except (json.JSONDecodeError, KeyError):
             ollama_models = "PARSE_ERROR"
 
-    evidence = f"Ollama models on M3: {ollama_models}"
+    evidence = f"Ollama models on AUX-NODE: {ollama_models}"
     return ProbeResult(
         claim=claim,
         category="process",
         verified=True,
         evidence=evidence,
-        probe_cmd="curl M3:11434/api/ps",
+        probe_cmd="curl AUX-NODE:11434/api/ps",
         probe_time=datetime.now(timezone.utc).isoformat(),
     )
 
 
-def probe_ollama_model(model_name: str, host: str = "gpu-node-2", port: str = "11434") -> ProbeResult:
+def probe_ollama_model(model_name: str, host: str = "gpu-node", port: str = "11434") -> ProbeResult:
     """Check if a specific Ollama model is loaded on a given host."""
     claim = f"Ollama model '{model_name}' on {host}"
     rc, out, _ = _run_cmd(
@@ -396,7 +396,7 @@ def probe_ollama_model(model_name: str, host: str = "gpu-node-2", port: str = "1
     try:
         data = json.loads(out)
         loaded_names = [m["name"] for m in data.get("models", [])]
-        # Support fuzzy matching (e.g. "qwen3.8" matches "qwen3.8:27b-132k")
+        # Support fuzzy matching (e.g. "qwen3.8" matches "<thinking-model>")
         found = False
         matched_name = ""
         for ln in loaded_names:
@@ -475,11 +475,11 @@ def probe_file_exists(path: str) -> ProbeResult:
 
 
 def probe_gpu_state() -> ProbeResult:
-    """Check GPU utilization and memory via nvidia-smi on M2 (SSH)."""
-    claim = "GPU state (nvidia-smi on M2)"
+    """Check GPU utilization and memory via nvidia-smi on GPU-NODE (SSH)."""
+    claim = "GPU state (nvidia-smi on GPU-NODE)"
     rc, out, err = _run_cmd(
         "nvidia-smi --query-gpu=index,name,memory.used,memory.total,utilization.gpu --format=csv,noheader,nounits 2>/dev/null || echo 'GPU_UNREACHABLE'",
-        host="llm-user@gpu-node-2", timeout=10
+        host="llm-user@gpu-node", timeout=10
     )
 
     if rc != 0 or not out.strip() or "UNREACHABLE" in out:
@@ -488,7 +488,7 @@ def probe_gpu_state() -> ProbeResult:
             category="gpu",
             verified=False,
             evidence=f"nvidia-smi failed: {err or out}",
-            probe_cmd="nvidia-smi via SSH M2",
+            probe_cmd="nvidia-smi via SSH GPU-NODE",
             probe_time=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -497,7 +497,7 @@ def probe_gpu_state() -> ProbeResult:
         category="gpu",
         verified=True,
         evidence=f"nvidia-smi output:\n{out}",
-        probe_cmd="nvidia-smi via SSH M2",
+        probe_cmd="nvidia-smi via SSH GPU-NODE",
         probe_time=datetime.now(timezone.utc).isoformat(),
     )
 
@@ -571,11 +571,11 @@ def probe_comfyui_status(host: str = "127.0.0.1", port: int = 8188) -> ProbeResu
 
 
 def probe_training_state() -> ProbeResult:
-    """Check for active training processes on M2."""
-    claim = "Training process state on M2"
+    """Check for active training processes on GPU-NODE."""
+    claim = "Training process state on GPU-NODE"
     rc, out, _ = _run_cmd(
         "ps aux | grep -iE '(train|python)' | grep -v grep || echo 'NO_TRAINING'",
-        host="llm-user@gpu-node-2", timeout=10
+        host="llm-user@gpu-node", timeout=10
     )
     has_training = "NO_TRAINING" not in out
     return ProbeResult(
@@ -583,7 +583,7 @@ def probe_training_state() -> ProbeResult:
         category="training",
         verified=True,  # probe succeeded; whether training runs is in evidence
         evidence=f"Training processes: {out[:500] if out else 'NONE'}" if has_training else "No training processes found",
-        probe_cmd="ps aux via SSH M2 (training grep)",
+        probe_cmd="ps aux via SSH GPU-NODE (training grep)",
         probe_time=datetime.now(timezone.utc).isoformat(),
     )
 
@@ -735,7 +735,7 @@ def guard(response_text: str, run_probes: bool = True) -> GuardResult:
         probes: List[ProbeResult] = []
         seen_probe_keys: set = set()
 
-        # Always run M2 + M3 + GPU probes as baseline
+        # Always run GPU-NODE + AUX-NODE + GPU probes as baseline
         baseline_probes = [
             ("m2_state", probe_m2_state),
             ("m3_state", probe_m3_state),
@@ -757,8 +757,8 @@ def guard(response_text: str, run_probes: bool = True) -> GuardResult:
             if cat == "ollama_model":
                 model_name = _extract_model_name(text)
                 if model_name:
-                    # Check both M2 and M3
-                    for h, p in [("gpu-node-2", "11434"), ("aux-node", "11434")]:
+                    # Check both GPU-NODE and AUX-NODE
+                    for h, p in [("gpu-node", "11434"), ("aux-node", "11434")]:
                         key = f"ollama_{model_name}_{h}"
                         if key not in seen_probe_keys:
                             probes.append(probe_ollama_model(model_name, h, p))
@@ -895,13 +895,13 @@ def main():
     if args.self_test:
         print("=== Verify-Before-Claim Self-Test ===\n")
 
-        print("1. Probing M2 state...")
+        print("1. Probing GPU-NODE state...")
         r1 = probe_m2_state()
         print(f"   [{r1.status}] {r1.claim}")
         print(f"   Evidence: {r1.evidence[:200]}...")
         print()
 
-        print("2. Probing M3 state...")
+        print("2. Probing AUX-NODE state...")
         r2 = probe_m3_state()
         print(f"   [{r2.status}] {r2.claim}")
         print(f"   Evidence: {r2.evidence[:200]}...")
@@ -913,8 +913,8 @@ def main():
         print(f"   Evidence: {r3.evidence[:200] if r3.evidence else r3.evidence}...")
         print()
 
-        print("4. Testing claim detection: 'M2 is free, qwen3.8 not loaded, training dead'")
-        sample1 = "M2 is free and qwen3.8 is not loaded. The training is dead. ComfyUI is running."
+        print("4. Testing claim detection: 'GPU-NODE is free, qwen3.8 not loaded, training dead'")
+        sample1 = "GPU-NODE is free and qwen3.8 is not loaded. The training is dead. ComfyUI is running."
         gr = guard(sample1, run_probes=True)
         print(f"   Input:    {sample1}")
         print(f"   Verdict:  {gr.verdict}")

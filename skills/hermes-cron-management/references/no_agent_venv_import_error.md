@@ -47,7 +47,7 @@ Fix: created `ift_pullback_watch.sh`, `us_pullback_watch.sh`, `project4_aggregat
 wrappers that `exec`
 `/path/to/projects`, repointed the 3
 crons via jobs.json edit. Verified: IFT/US ran (US even fired a real NVDA pullback
-alert to Telegram), aggregator wrote its briefing, Telegram token valid (bot Hux275Bot).
+alert to Telegram), aggregator wrote its briefing, Telegram token valid (bot <agent-bot>).
 
 ## Prevention — health watchdog
 Notification/monitor crons fail SILENTLY (error or paused) and the user notices only
